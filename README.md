@@ -1,102 +1,188 @@
-### Alternative implementation of the Bitwarden server API written in Rust and compatible with [upstream Bitwarden clients](https://bitwarden.com/download/)*, perfect for self-hosted deployment where running the official resource-heavy service might not be ideal.
+# Vaultwarden Container Building
 
-📢 Note: This project was known as Bitwarden_RS and has been renamed to separate itself from the official Bitwarden server in the hopes of avoiding confusion and trademark/branding issues. Please see [#1642](https://github.com/dani-garcia/vaultwarden/discussions/1642) for more explanation.
+To build and release new testing and stable releases of Vaultwarden we use `docker buildx bake`.<br>
+This can be used locally by running the command yourself, but it is also used by GitHub Actions.
 
----
-[![Build](https://github.com/dani-garcia/vaultwarden/actions/workflows/build.yml/badge.svg)](https://github.com/dani-garcia/vaultwarden/actions/workflows/build.yml)
-[![ghcr.io](https://img.shields.io/badge/ghcr.io-download-blue)](https://github.com/dani-garcia/vaultwarden/pkgs/container/vaultwarden)
-[![Docker Pulls](https://img.shields.io/docker/pulls/vaultwarden/server.svg)](https://hub.docker.com/r/vaultwarden/server)
-[![Quay.io](https://img.shields.io/badge/Quay.io-download-blue)](https://quay.io/repository/vaultwarden/server)
-[![Dependency Status](https://deps.rs/repo/github/dani-garcia/vaultwarden/status.svg)](https://deps.rs/repo/github/dani-garcia/vaultwarden)
-[![GitHub Release](https://img.shields.io/github/release/dani-garcia/vaultwarden.svg)](https://github.com/dani-garcia/vaultwarden/releases/latest)
-[![AGPL-3.0 Licensed](https://img.shields.io/github/license/dani-garcia/vaultwarden.svg)](https://github.com/dani-garcia/vaultwarden/blob/main/LICENSE.txt)
-[![Matrix Chat](https://img.shields.io/matrix/vaultwarden:matrix.org.svg?logo=matrix)](https://matrix.to/#/#vaultwarden:matrix.org)
+This makes it easier for us to test and maintain the different architectures we provide.<br>
+We also just have two Dockerfile's one for Debian and one for Alpine based images.<br>
+With just these two files we can build both Debian and Alpine images for the following platforms:
+ - amd64 (linux/amd64)
+ - arm64 (linux/arm64)
+ - armv7 (linux/arm/v7)
+ - armv6 (linux/arm/v6)
 
-Image is based on [Rust implementation of Bitwarden API](https://github.com/dani-garcia/vaultwarden).
+Some unsupported platforms for Debian based images. These are not built and tested by default and are only provided to make it easier for users to build for these architectures.
+- 386     (linux/386)
+- ppc64le (linux/ppc64le)
+- s390x   (linux/s390x)
 
-**This project is not associated with the [Bitwarden](https://bitwarden.com/) project nor Bitwarden, Inc.**
+To build these containers you need to enable QEMU binfmt support to be able to run/emulate architectures which are different then your host.<br>
+This ensures the container build process can run binaries from other architectures.<br>
 
-#### ⚠️**IMPORTANT**⚠️: When using this server, please report any bugs or suggestions to us directly (look at the bottom of this page for ways to get in touch), regardless of whatever clients you are using (mobile, desktop, browser...). DO NOT use the official support channels.
+**NOTE**: Run all the examples below from the root of the repo.<br>
 
----
 
-## Features
+## How to install QEMU binfmt support
 
-Basically full implementation of Bitwarden API is provided including:
+This is different per host OS, but most support this in some way.<br>
 
- * Organizations support
- * Attachments and Send
- * Vault API support
- * Serving the static files for Vault interface
- * Website icons API
- * Authenticator and U2F support
- * YubiKey and Duo support
- * Emergency Access
-
-## Installation
-Pull the docker image and mount a volume from the host for persistent storage:
-
-```sh
-docker pull vaultwarden/server:latest
-docker run -d --name vaultwarden -v /vw-data/:/data/ --restart unless-stopped -p 80:80 vaultwarden/server:latest
+### Ubuntu/Debian
+```bash
+apt install binfmt-support qemu-user-static
 ```
-This will preserve any persistent data under /vw-data/, you can adapt the path to whatever suits you.
 
-**IMPORTANT**: Most modern web browsers disallow the use of Web Crypto APIs in insecure contexts. In this case, you might get an error like `Cannot read property 'importKey'`. To solve this problem, you need to access the web vault via HTTPS or localhost.
+### Arch Linux (others based upon it)
+```bash
+pacman -S qemu-user-static qemu-user-static-binfmt
+```
 
-This can be configured in [vaultwarden directly](https://github.com/dani-garcia/vaultwarden/wiki/Enabling-HTTPS) or using a third-party reverse proxy ([some examples](https://github.com/dani-garcia/vaultwarden/wiki/Proxy-examples)).
+### Fedora
+```bash
+dnf install qemu-user-static
+```
 
-If you have an available domain name, you can get HTTPS certificates with [Let's Encrypt](https://letsencrypt.org/), or you can generate self-signed certificates with utilities like [mkcert](https://github.com/FiloSottile/mkcert). Some proxies automatically do this step, like Caddy (see examples linked above).
+### Others
+There also is an option to use an other docker container to provide support for this.
+```bash
+# To install and activate
+docker run --privileged --rm tonistiigi/binfmt --install arm64,arm
+# To unistall
+docker run --privileged --rm tonistiigi/binfmt --uninstall 'qemu-*'
+```
 
-## Usage
-See the [vaultwarden wiki](https://github.com/dani-garcia/vaultwarden/wiki) for more information on how to configure and run the vaultwarden server.
 
-## Get in touch
-To ask a question, offer suggestions or new features or to get help configuring or installing the software, please use [GitHub Discussions](https://github.com/dani-garcia/vaultwarden/discussions) or [the forum](https://vaultwarden.discourse.group/).
+## Single architecture container building
 
-If you spot any bugs or crashes with vaultwarden itself, please [create an issue](https://github.com/dani-garcia/vaultwarden/issues/). Make sure you are on the latest version and there aren't any similar issues open, though!
+You can build a container per supported architecture as long as you have QEMU binfmt support installed on your system.<br>
 
-If you prefer to chat, we're usually hanging around at [#vaultwarden:matrix.org](https://matrix.to/#/#vaultwarden:matrix.org) room on Matrix. Feel free to join us!
+```bash
+# Default bake triggers a Debian build using the hosts architecture
+docker buildx bake --file docker/docker-bake.hcl
 
-### Sponsors
-Thanks for your contribution to the project!
+# Bake Debian ARM64 using a debug build
+CARGO_PROFILE=dev \
+SOURCE_COMMIT="$(git rev-parse HEAD)" \
+docker buildx bake --file docker/docker-bake.hcl debian-arm64
 
-<!--
-<table>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/username">
-        <img src="https://avatars.githubusercontent.com/u/725423?s=75&v=4" width="75px;" alt="username"/>
-        <br />
-        <sub><b>username</b></sub>
-      </a>
-  </td>
-  </tr>
-</table>
+# Bake Alpine ARMv6 as a release build
+SOURCE_COMMIT="$(git rev-parse HEAD)" \
+docker buildx bake --file docker/docker-bake.hcl alpine-armv6
+```
 
-<br/>
--->
 
-<table>
-  <tr>
-    <td align="center">
-       <a href="https://github.com/themightychris" style="width: 75px">
-        <sub><b>Chris Alfano</b></sub>
-      </a>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/numberly" style="width: 75px">
-        <sub><b>Numberly</b></sub>
-      </a>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/IQ333777" style="width: 75px">
-        <sub><b>IQ333777</b></sub>
-      </a>
-    </td>
-  </tr>
-</table>
+## Local Multi Architecture container building
+
+Start the initialization, this only needs to be done once.
+
+```bash
+# Create and use a new buildx builder instance which connects to the host network
+docker buildx create --name vaultwarden --use --driver-opt network=host
+
+# Validate it runs
+docker buildx inspect --bootstrap
+
+# Create a local container registry directly reachable on the localhost
+docker run -d --name registry --network host registry:2
+```
+
+After that is done, you should be able to build and push to the local registry.<br>
+Use the following command with the modified variables to bake the Alpine images.<br>
+Replace `alpine` with `debian` if you want to build the debian multi arch images.
+
+```bash
+# Start a buildx bake using a debug build
+CARGO_PROFILE=dev \
+SOURCE_COMMIT="$(git rev-parse HEAD)" \
+CONTAINER_REGISTRIES="localhost:5000/vaultwarden/server" \
+docker buildx bake --file docker/docker-bake.hcl alpine-multi
+```
+
+
+## Using the `bake.sh` script
+
+To make it a bit more easier to trigger a build, there also is a `bake.sh` script.<br>
+This script calls `docker buildx bake` with all the right parameters and also generates the `SOURCE_COMMIT` and `SOURCE_VERSION` variables.<br>
+This script can be called from both the repo root or within the docker directory.
+
+So, if you want to build a Multi Arch Alpine container pushing to your localhost registry you can run this from within the docker directory. (Just make sure you executed the initialization steps above first)
+```bash
+CONTAINER_REGISTRIES="localhost:5000/vaultwarden/server" \
+./bake.sh alpine-multi
+```
+
+Or if you want to just build a Debian container from the repo root, you can run this.
+```bash
+docker/bake.sh
+```
+
+You can append both `alpine` and `debian` with `-amd64`, `-arm64`, `-armv7` or `-armv6`, which will trigger a build for that specific platform.<br>
+This will also append those values to the tag so you can see the builded container when running `docker images`.
+
+You can also append extra arguments after the target if you want. This can be useful for example to print what bake will use.
+```bash
+docker/bake.sh alpine-all --print
+```
+
+### Testing baked images
+
+To test these images you can run these images by using the correct tag and provide the platform.<br>
+For example, after you have build an arm64 image via `./bake.sh debian-arm64` you can run:
+```bash
+docker run --rm -it \
+  -e DISABLE_ADMIN_TOKEN=true \
+  -e I_REALLY_WANT_VOLATILE_STORAGE=true \
+  -p8080:80 --platform=linux/arm64 \
+  vaultwarden/server:testing-arm64
+```
+
+
+## Using the `podman-bake.sh` script
+
+To also make building easier using podman, there is a `podman-bake.sh` script.<br>
+This script calls `podman buildx build` with the needed parameters and the same as `bake.sh`, it will generate some variables automatically.<br>
+This script can be called from both the repo root or within the docker directory.
+
+**NOTE:** Unlike the `bake.sh` script, this only supports a single `CONTAINER_REGISTRIES`, and a single `BASE_TAGS` value, no comma separated values. It also only supports building separate architectures, no Multi Arch containers.
+
+To build an Alpine arm64 image with only sqlite support and mimalloc, run this:
+```bash
+DB="sqlite,enable_mimalloc" \
+./podman-bake.sh alpine-arm64
+```
+
+Or if you want to just build a Debian container from the repo root, you can run this.
+```bash
+docker/podman-bake.sh
+```
+
+You can append extra arguments after the target if you want. This can be useful for example to disable cache like this.
+```bash
+./podman-bake.sh alpine-arm64 --no-cache
+```
+
+For the podman builds you can, just like the `bake.sh` script, also append the architecture to build for that specific platform.<br>
+
+### Testing podman builded images
+
+The command to start a podman built container is almost the same as for the docker/bake built containers. The images start with `localhost/`, so you need to prepend that.
+
+```bash
+podman run --rm -it \
+  -e DISABLE_ADMIN_TOKEN=true \
+  -e I_REALLY_WANT_VOLATILE_STORAGE=true \
+  -p8080:80 --platform=linux/arm64 \
+  localhost/vaultwarden/server:testing-arm64
+```
+
+
+## Variables supported
+| Variable              | default | description |
+| --------------------- | ------------------ | ----------- |
+| CARGO_PROFILE         | null               | Which cargo profile to use. `null` means what is defined in the Dockerfile                                         |
+| DB                    | null               | Which `features` to build. `null` means what is defined in the Dockerfile                                          |
+| SOURCE_REPOSITORY_URL | null               | The source repository form where this build is triggered                                                           |
+| SOURCE_COMMIT         | null               | The commit hash of the current commit for this build                                                               |
+| SOURCE_VERSION        | null               | The current exact tag of this commit, else the last tag and the first 8 chars of the source commit                 |
+| BASE_TAGS             | testing            | Tags to be used. Can be a comma separated value like "latest,1.29.2"                                               |
+| CONTAINER_REGISTRIES  | vaultwarden/server | Comma separated value of container registries. Like `ghcr.io/dani-garcia/vaultwarden,docker.io/vaultwarden/server` |
+| VW_VERSION            | null               | To override the `SOURCE_VERSION` value. This is also used by the `build.rs` code for example                       |
